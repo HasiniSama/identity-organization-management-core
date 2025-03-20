@@ -84,6 +84,7 @@ public class OrganizationManagementConstants {
     public static final String ROOT_TENANT_DOMAIN = "RootTenantDomain";
     public static final String DESC_SORT_ORDER = "DESC";
     public static final String ASC_SORT_ORDER = "ASC";
+    public static final String EXISTING_DOMAIN_ERROR_CODE = "TM-60009";
 
     public static final String EQ = "eq";
     public static final String CO = "co";
@@ -751,7 +752,9 @@ public class OrganizationManagementConstants {
                 "Server encountered an error while updating organization user associations for the user."),
         ERROR_CODE_ERROR_CHECK_ORGANIZATION_USER_ASSOCIATIONS("65144",
                 "Unable to check if organization user associations exist.",
-                "Server encountered an error while checking organization user associations for the user.");
+                "Server encountered an error while checking organization user associations for the user."),
+        ERROR_CODE_EXISTING_ORGANIZATION_IDENTIFIER("65145", "Unable to create the organization.",
+                "The given organization identifier %s already exists. Please use a different identifier.");
 
         private final String code;
         private final String message;
