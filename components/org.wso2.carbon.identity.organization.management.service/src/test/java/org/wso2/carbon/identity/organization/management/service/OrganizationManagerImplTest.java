@@ -40,6 +40,7 @@ import org.wso2.carbon.identity.organization.management.service.model.Organizati
 import org.wso2.carbon.identity.organization.management.service.model.PatchOperation;
 import org.wso2.carbon.identity.organization.management.service.util.Utils;
 import org.wso2.carbon.identity.organization.management.util.TestUtils;
+import org.wso2.carbon.tenant.mgt.services.TenantMgtService;
 import org.wso2.carbon.user.api.AuthorizationManager;
 import org.wso2.carbon.user.api.Tenant;
 import org.wso2.carbon.user.api.UserRealm;
@@ -109,6 +110,8 @@ public class OrganizationManagerImplTest {
 
     private Tenant tenant;
 
+    private TenantMgtService tenantMgtService;
+
     private MockedStatic<Utils> mockedUtilities;
 
     @BeforeClass
@@ -116,6 +119,7 @@ public class OrganizationManagerImplTest {
 
         realmService = mock(RealmService.class);
         tenantManager = mock(TenantManager.class);
+        tenantMgtService = mock(TenantMgtService.class);
         tenant = mock(Tenant.class);
         mockUtils();
     }
@@ -127,6 +131,7 @@ public class OrganizationManagerImplTest {
         OrganizationManagementDataHolder.getInstance().setOrganizationManagerListener(mock(
                 OrganizationManagerListener.class));
         OrganizationManagementDataHolder.getInstance().setRealmService(realmService);
+        OrganizationManagementDataHolder.getInstance().setTenantMgtService(tenantMgtService);
 
         TestUtils.initiateH2Base();
         TestUtils.mockDataSource();
