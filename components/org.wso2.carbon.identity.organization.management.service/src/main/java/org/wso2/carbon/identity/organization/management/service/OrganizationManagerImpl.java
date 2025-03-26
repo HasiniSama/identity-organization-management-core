@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2022-2025, WSO2 LLC. (https://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -42,7 +42,6 @@ import org.wso2.carbon.identity.organization.management.service.model.Organizati
 import org.wso2.carbon.identity.organization.management.service.model.OrganizationAttribute;
 import org.wso2.carbon.identity.organization.management.service.model.ParentOrganizationDO;
 import org.wso2.carbon.identity.organization.management.service.model.PatchOperation;
-import org.wso2.carbon.identity.organization.management.service.model.TenantTypeOrganization;
 import org.wso2.carbon.identity.organization.management.service.util.Utils;
 import org.wso2.carbon.stratos.common.exception.TenantManagementClientException;
 import org.wso2.carbon.stratos.common.exception.TenantMgtException;
@@ -71,6 +70,7 @@ import static org.wso2.carbon.identity.organization.management.service.constant.
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.CREATOR_USERNAME;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.DESC_SORT_ORDER;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.EW;
+import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.EXISTING_DOMAIN_ERROR_CODE;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ACTIVE_CHILD_ORGANIZATIONS_EXIST;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ATTRIBUTE_KEY_MISSING;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ATTRIBUTE_VALUE_MISSING;
@@ -82,6 +82,7 @@ import static org.wso2.carbon.identity.organization.management.service.constant.
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_DEACTIVATING_ORGANIZATION_TENANT;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_DEACTIVATING_ROOT_ORGANIZATION_TENANT;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_VALIDATING_ORGANIZATION_OWNER;
+import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_EXISTING_ORGANIZATION_HANDLE;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_INVALID_CURSOR_FOR_PAGINATION;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_INVALID_FILTER_FORMAT;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_INVALID_FILTER_TIMESTAMP_FORMAT;
@@ -174,11 +175,9 @@ public class OrganizationManagerImpl implements OrganizationManager {
         getListener().preAddOrganization(organization);
         setOrganizationOwnerInformation(organization);
         organizationManagementDAO.addOrganization(organization);
+
         // Create a tenant for tenant type organization.
-        if (organization instanceof TenantTypeOrganization) {
-            String tenantDomainName = ((TenantTypeOrganization) organization).getDomainName();
-            createTenant(tenantDomainName, organization);
-        }
+        createTenant(organization.getOrganizationHandle(), organization);
 
         try {
             getListener().postAddOrganization(organization);
@@ -270,6 +269,7 @@ public class OrganizationManagerImpl implements OrganizationManager {
                 organization.setPermissions(permissions);
             }
         }
+        organization.setOrganizationHandle(resolveTenantDomain(organization.getId()));
 
         getListener().postGetOrganization(organizationId.trim(), organization);
         return organization;
@@ -363,8 +363,14 @@ public class OrganizationManagerImpl implements OrganizationManager {
         String orgId = resolveOrganizationId(getTenantDomain());
         expressionNodes.removeAll(filteringByParentIdExpressionNodes);
 
-        return organizationManagementDAO.getOrganizationsList(recursive, limit, orgId, sortOrder, expressionNodes,
-                                                            filteringByParentIdExpressionNodes);
+        List<Organization> organizations = organizationManagementDAO.getOrganizationsList(
+                recursive, limit, orgId, sortOrder, expressionNodes, filteringByParentIdExpressionNodes);
+
+        // Iterate through organizations and set the organization handle for each.
+        for (Organization organization : organizations) {
+            organization.setOrganizationHandle(resolveTenantDomain(organization.getId()));
+        }
+        return organizations;
     }
 
     private List<ExpressionNode> getParentIdExpressionNodes(List<ExpressionNode> expressionNodes)
@@ -443,7 +449,9 @@ public class OrganizationManagerImpl implements OrganizationManager {
 
         getListener().postPatchOrganization(organizationId, patchOperations);
 
-        return organizationManagementDAO.getOrganization(organizationId);
+        Organization organization = organizationManagementDAO.getOrganization(organizationId);
+        organization.setOrganizationHandle(resolveTenantDomain(organization.getId()));
+        return organization;
     }
 
     @Override
@@ -471,6 +479,7 @@ public class OrganizationManagerImpl implements OrganizationManager {
         organizationManagementDAO.updateOrganization(organizationId, organization);
 
         Organization updatedOrganization = organizationManagementDAO.getOrganization(organizationId);
+        updatedOrganization.setOrganizationHandle(resolveTenantDomain(organization.getId()));
 
         if (StringUtils.equals(TENANT.toString(), organization.getType())) {
             updateTenantStatus(organization.getStatus(), organizationId);
@@ -1063,6 +1072,9 @@ public class OrganizationManagerImpl implements OrganizationManager {
             // Rollback created organization.
             deleteOrganization(organization.getId());
             if (e instanceof TenantManagementClientException) {
+                if (StringUtils.equals(EXISTING_DOMAIN_ERROR_CODE, e.getMessage())) {
+                    throw handleClientException(ERROR_CODE_EXISTING_ORGANIZATION_HANDLE, domain);
+                }
                 throw handleClientException(ERROR_CODE_INVALID_TENANT_TYPE_ORGANIZATION);
             } else {
                 throw handleServerException(ERROR_CODE_ERROR_ADDING_TENANT_TYPE_ORGANIZATION, e);
